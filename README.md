@@ -6,11 +6,22 @@ Run the following commands:
 cd {cloned_dir}
 cp .env.example .env
 chmod +x setup.sh
-cd tenant-and-user-creation
-chmod +x create_tenants_users.sh
+```
+Update the `.env` file.
+```Provide the password for grafana, you can use the default password used for advance
+For the PG_MONITOR_PASSWORD  USE alpha numeric only, DO NOT USE special chars
 ```
 
-Update the `.env` file.
+Run:
+```cd tenant-and-user-creation```
+Update 
+provision_tenants.py providing the IP address where we want to create the tenants and users
+
+Run command : 
+you can use the customer names as comma separated.
+```python3 provision_tenants.py --customer-names acme,globex,initech --tenants 4 --users 10 --output users.csv```
+
+
 
 Run the following commands:
 
@@ -18,6 +29,8 @@ Run the following commands:
 cd ..
 ./setup.sh
 ```
+
+**Following Part is not required For Now**
 
 update the tenant-and-user-creation/create_tenants_users.sh file
 provide the list of tenants name & USER_COUNT per tenant we need to create
