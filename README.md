@@ -1,3 +1,9 @@
+Make sure platform admin is created before running the multi tenants.
+Run command to create platform admin 
+```
+docker exec isaraadvance-backend-1 ./addadminuser -n red -p 'pSw@27#Fr' -f "Red Ferguson" --platformAdmin
+```
+
 Clone this repo to the ec2 host where the advance app is deployed.
 
 Run the following commands:
