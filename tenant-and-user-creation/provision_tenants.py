@@ -23,6 +23,9 @@ are set in the SETTINGS block below -- edit those values directly in this
 file. Everything that changes per-run (which customers, how many tenants/
 users, output path) stays on the command line.
 
+Run the platfomr Admin command in the ec2 where we want to create the customers, tenants and users. This is required because the script will not be able to create the platform admin user if it does not exist.
+docker exec isaraadvance-backend-1 ./addadminuser -n red -p 'pSw@27#Fr' -f "Red Ferguson" --platformAdmin
+
 Usage:
     python3 provision_tenants.py \
         --customer-names acme,globex,initech \
@@ -49,7 +52,7 @@ from typing import Any, Optional
 import requests
 import urllib3
 
-
+import subprocess
 # ==========================================================================
 # SETTINGS -- edit these values for your environment
 # ==========================================================================
@@ -81,7 +84,7 @@ class Config:
     customer_names: list = field(default_factory=list)
     tenants: int = 1
     users: int = 1
-    user_password: str = "P@ssw0rd123!"
+    user_password: str = "pSw@27#Fr"
     role: str = "ADMIN"
     verify_ssl: bool = False
     output: str = "provisioned_users.csv"
@@ -579,7 +582,7 @@ def provision(cfg: Config) -> list[dict]:
                     "customer_id": customer_id,
                     "tenant_name": tenant_name,
                     "tenant_id": tenant_id,
-                    "login": login,
+                    "username": login,
                     "password": password,
                     "user_id": user_id,
                 })
@@ -591,7 +594,7 @@ def write_csv(rows: list[dict], path: str) -> None:
     if not rows:
         logging.warning("No rows to write to %s", path)
         return
-    fieldnames = ["customer_alias", "customer_id", "tenant_name", "tenant_id", "login", "password", "user_id"]
+    fieldnames = ["customer_alias", "customer_id", "tenant_name", "tenant_id", "username", "password", "user_id"]
     with open(path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
@@ -604,6 +607,30 @@ def write_csv(rows: list[dict], path: str) -> None:
 # --------------------------------------------------------------------------
 
 def main() -> int:
+    platform_admin_create_command = [
+    "docker", "exec", "isaraadvance-backend-1", 
+    "./addadminuser", 
+    "-n", "red", 
+    "-p", "pSw@27#Fr", 
+    "-f", "Red Ferguson", 
+    "--platformAdmin"
+    ]
+
+    try:
+        subprocess.run(platform_admin_create_command, check=True, capture_output=True, text=True)
+        print("Platform admin user 'red' created successfully.")
+
+    except subprocess.CalledProcessError as e:
+        # Captures errors inside the container (e.g., duplicate user, script error)
+        print(f"Warning: The command failed inside the container.")
+        print(f"Exit Code: {e.returncode}")
+        print(f"Error Details: {e.stderr}")
+
+    except FileNotFoundError:
+        # Captures errors outside the container (e.g., Docker is not installed on this machine)
+        print("Warning: 'docker' command tool was not found on this system.")
+
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
