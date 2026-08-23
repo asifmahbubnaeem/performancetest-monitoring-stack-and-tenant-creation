@@ -220,6 +220,18 @@ Next steps:
        curl -s localhost:${PROM_PORT:-9000}/api/v1/alerts | jq '.data.alerts[] | select(.state=="firing")'
      Non-empty = FAIL on GA criterion #10295 "no connection exhaustion"
 
+ 1. Check Prometheus targets are all healthy: http://<ec2-ip>:${PROM_PORT:-9000}/targets — every job (node, cadvisor, postgres, postgres-audit) should show UP. If node is down, that's
+     the host.docker.internal issue we already guarded with extra_hosts, but worth confirming.
+  2. Confirm the alert rules actually loaded (this was the whole point of the rules.yml work): curl -s http://<ec2-ip>:${PROM_PORT:-9000}/api/v1/rules | jq 
+     '.data.groups[].rules[].name' — should list the 4 exhaustion alerts.
+  3. Grafana: log in at http://<ec2-ip>:${GRAFANA_PORT:-8443} (admin / your GRAFANA_ADMIN_PASSWORD), add Prometheus as a data source pointing at http://prometheus:9090
+     (container-to-container, same monitoring network), then Dashboards → Import and paste these IDs:
+     - 1860 — Node Exporter Full
+     - 9628 — PostgreSQL Database (works for both postgres and postgres-audit jobs via the pool label)
+     - cAdvisor dashboard once #4 below is resolved (14282 or 19792 are the common ones for v0.49.x)
+
+
+
 Teardown:  docker compose down          (keep data)
            docker compose down -v       (wipe metrics + dashboards)
 EOF
