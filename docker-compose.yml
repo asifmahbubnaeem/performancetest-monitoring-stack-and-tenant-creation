@@ -10,10 +10,16 @@ services:
       - "${PROM_PORT:-9000}:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./rules.yml:/etc/prometheus/rules.yml:ro
       - prom-data:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.retention.time=15d"
+    extra_hosts:
+      # host.docker.internal doesn't auto-resolve on native Linux Docker
+      # Engine (only Docker Desktop) — required for the `node` scrape job
+      # to reach node-exporter's host-network :9100 on the EC2 box.
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     networks: [monitoring]
 
@@ -41,7 +47,7 @@ services:
     restart: unless-stopped
 
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:latest
+    image: gcr.io/cadvisor/cadvisor:v0.49.1   # pinned: floating :latest breaks first-hour/last-hour and run-to-run drift comparisons
     container_name: cadvisor
     ports:
       - "${CADVISOR_PORT:-8081}:8080"
@@ -60,10 +66,34 @@ services:
       - "${PGEXPORTER_PORT:-9187}:9187"
     environment:
       - DATA_SOURCE_NAME=postgresql://${PG_MONITOR_USER}:${PG_MONITOR_PASSWORD}@${PG_CONTAINER_NAME}:5432/${PG_DATABASE}?sslmode=${PG_SSLMODE:-require}
+    volumes:
+      - ./queries.yaml:/etc/postgres_exporter/queries.yaml:ro
+    command:
+      - "--extend.query-path=/etc/postgres_exporter/queries.yaml"
     restart: unless-stopped
     networks:
       - monitoring
       - app-net                      # must reach the postgres container by name
+
+  # Separate instance: audit-postgres is a distinct Postgres cluster/pool
+  # (AUDIT_DATABASE_POOL_MAX, default 20) from the main advance DB pool
+  # above — one postgres_exporter instance takes one DSN, so exhaustion on
+  # the audit pool needs its own exporter to be visible at all.
+  postgres-exporter-audit:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: postgres-exporter-audit
+    ports:
+      - "${AUDIT_PGEXPORTER_PORT:-9188}:9187"
+    environment:
+      - DATA_SOURCE_NAME=postgresql://${AUDIT_PG_MONITOR_USER:-${PG_MONITOR_USER}}:${AUDIT_PG_MONITOR_PASSWORD:-${PG_MONITOR_PASSWORD}}@${AUDIT_PG_CONTAINER_NAME:-audit-postgres}:5432/${AUDIT_PG_DATABASE:-audit_logs}?sslmode=${AUDIT_PG_SSLMODE:-require}
+    volumes:
+      - ./queries.yaml:/etc/postgres_exporter/queries.yaml:ro
+    command:
+      - "--extend.query-path=/etc/postgres_exporter/queries.yaml"
+    restart: unless-stopped
+    networks:
+      - monitoring
+      - app-net                      # audit-postgres is also on the app's default network
 
 networks:
   monitoring:
