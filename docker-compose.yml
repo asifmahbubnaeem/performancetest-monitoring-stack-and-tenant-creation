@@ -47,7 +47,15 @@ services:
     restart: unless-stopped
 
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.49.1   # pinned: floating :latest breaks first-hour/last-hour and run-to-run drift comparisons
+    # v0.49.1's vendored Docker client only speaks API <=1.41; Docker Engine
+    # v29+ requires >=1.44, so the docker container factory fails to
+    # register and dashboards show no per-container data at all
+    # (google/cadvisor#3793, fixed in v0.57.0 by PR #3863). Also note the
+    # registry moved from gcr.io/cadvisor/cadvisor to ghcr.io/google/cadvisor
+    # at v0.53.0 — the old gcr.io path has no v0.57.0 tag.
+    # Still pinned (not :latest): floating tags break first-hour/last-hour
+    # and run-to-run drift comparisons.
+    image: ghcr.io/google/cadvisor:v0.57.0
     container_name: cadvisor
     ports:
       - "${CADVISOR_PORT:-8081}:8080"

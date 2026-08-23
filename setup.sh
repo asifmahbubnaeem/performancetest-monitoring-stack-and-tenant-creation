@@ -32,16 +32,18 @@ set -a; source .env; set +a
 # audit cluster is a separate Postgres instance (AUDIT_DATABASE_POOL_MAX pool,
 # distinct from the main advance pool) — falls back to the main monitor
 # creds if you provisioned the same role/password on both clusters
-AUDIT_PG_CONTAINER_NAME="${AUDIT_PG_CONTAINER_NAME:-audit-postgres}"
+AUDIT_PG_CONTAINER_NAME="${AUDIT_PG_CONTAINER_NAME:-isaraadvance-audit-postgres-1}"
 AUDIT_PG_DATABASE="${AUDIT_PG_DATABASE:-audit_logs}"
 AUDIT_PG_MONITOR_USER="${AUDIT_PG_MONITOR_USER:-$PG_MONITOR_USER}"
 AUDIT_PG_MONITOR_PASSWORD="${AUDIT_PG_MONITOR_PASSWORD:-$PG_MONITOR_PASSWORD}"
 # The official postgres image makes its superuser role AS whatever
-# POSTGRES_USER names at initdb — there is no separate "postgres" role once
-# that's set. isaraadvance sets it to advance_admin_login (main cluster) and
-# audit_logger (audit cluster); default to those instead of "postgres".
-PG_SUPERUSER="${PG_SUPERUSER:-advance_admin_login}"
-AUDIT_PG_SUPERUSER="${AUDIT_PG_SUPERUSER:-audit_logger}"
+# POSTGRES_USER (DATABASE_ADMIN_USER / AUDIT_DATABASE_USER) was set to at
+# initdb on THIS deployment — there is no fixed default. Guessing it wrong
+# fails loudly ("role ... does not exist"), so require it explicitly rather
+# than defaulting. Verify with:
+#   docker exec <container> env | grep -i POSTGRES_USER
+: "${PG_SUPERUSER:?set in .env — see docker exec ... env | grep POSTGRES_USER}"
+: "${AUDIT_PG_SUPERUSER:?set in .env — see docker exec ... env | grep POSTGRES_USER}"
 ok "prerequisites"
 
 # --- 2. Private IP + prometheus.yml -----------------------------------------
@@ -103,7 +105,7 @@ docker ps --format '{{.Names}}' | grep -qx "${AUDIT_PG_CONTAINER_NAME}" \
 ok "app network + both postgres containers found"
 
 # --- 4b. Postgres prep: monitor role + pg_stat_statements (idempotent) --------
-PSQL="docker exec -i ${PG_CONTAINER_NAME} psql -U ${PG_SUPERUSER:-postgres} -v ON_ERROR_STOP=1"
+PSQL="docker exec -i ${PG_CONTAINER_NAME} psql -U ${PG_SUPERUSER} -d postgres -v ON_ERROR_STOP=1"
 
 info "ensuring '${PG_MONITOR_USER}' role exists (password synced from .env)..."
 $PSQL >/dev/null <<SQL || fail "could not create/update ${PG_MONITOR_USER} role"
@@ -120,7 +122,7 @@ END
 SQL
 ok "monitor role ready"
 
-AUDIT_PSQL="docker exec -i ${AUDIT_PG_CONTAINER_NAME} psql -U ${AUDIT_PG_SUPERUSER} -v ON_ERROR_STOP=1"
+AUDIT_PSQL="docker exec -i ${AUDIT_PG_CONTAINER_NAME} psql -U ${AUDIT_PG_SUPERUSER} -d postgres -v ON_ERROR_STOP=1"
 info "ensuring '${AUDIT_PG_MONITOR_USER}' role exists on the audit cluster..."
 $AUDIT_PSQL >/dev/null <<SQL || fail "could not create/update ${AUDIT_PG_MONITOR_USER} role on audit cluster"
 DO \$\$
@@ -145,10 +147,10 @@ if ! echo "${PRELOAD}" | grep -q "pg_stat_statements"; then
   docker restart "${PG_CONTAINER_NAME}" >/dev/null
   # wait for postgres to come back
   for i in $(seq 1 30); do
-    docker exec "${PG_CONTAINER_NAME}" pg_isready -U "${PG_SUPERUSER:-postgres}" >/dev/null 2>&1 && break
+    docker exec "${PG_CONTAINER_NAME}" pg_isready -U "${PG_SUPERUSER}" >/dev/null 2>&1 && break
     sleep 1
   done
-  docker exec "${PG_CONTAINER_NAME}" pg_isready -U "${PG_SUPERUSER:-postgres}" >/dev/null 2>&1 \
+  docker exec "${PG_CONTAINER_NAME}" pg_isready -U "${PG_SUPERUSER}" >/dev/null 2>&1 \
     || fail "postgres did not come back after restart"
   ok "pg_stat_statements preloaded (postgres restarted)"
 else
